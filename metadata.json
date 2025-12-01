@@ -1,0 +1,5 @@
+{
+  "name": "K8s HPA Simulator",
+  "description": "A visual simulator for Kubernetes Horizontal Pod Autoscaling (HPA v2) based on custom queue latency metrics.",
+  "requestFramePermissions": []
+}
