@@ -27,6 +27,7 @@ export interface SimulatorConfig {
   initialMetricValue: number; // Generic start value (e.g. latency)
   processingRatePerPod: number; // jobs/sec/pod
   producingRateTotal: number; // jobs/sec
+  podStartupDelay: number; // seconds before a new pod is ready
   
   // Simulation
   simulationSeconds: number;
@@ -40,7 +41,8 @@ export interface SimulatorConfig {
 
 export interface SimulationPoint {
   t: number;
-  pods: number;
+  pods: number; // Total pods (replicas)
+  readyPods: number; // Pods contributing to capacity
   queueJobs: number;
   latency: number; // Physical latency
   metricValue: number; // The computed metric value used for HPA

@@ -17,30 +17,39 @@ export const runSimulation = (config: SimulatorConfig): SimulationResult => {
   const points: SimulationPoint[] = [];
   
   // 0. Input Sanitization
-  const simSeconds = (typeof config.simulationSeconds === 'number' && !isNaN(config.simulationSeconds) && config.simulationSeconds >= 0) 
-    ? config.simulationSeconds 
-    : 600;
+  const simSeconds = Number(config.simulationSeconds) > 0 ? Number(config.simulationSeconds) : 600;
   
-  const minPods = (typeof config.minPods === 'number' && !isNaN(config.minPods)) ? Math.max(0, config.minPods) : 1;
-  const maxPods = (typeof config.maxPods === 'number' && !isNaN(config.maxPods)) ? Math.max(minPods, config.maxPods) : Math.max(minPods, 20);
-  const startingPods = (typeof config.startingPods === 'number' && !isNaN(config.startingPods)) ? Math.max(0, config.startingPods) : 1;
-  const targetMetric = (typeof config.targetMetricValue === 'number' && !isNaN(config.targetMetricValue) && config.targetMetricValue > 0) ? config.targetMetricValue : 1;
-  const procRate = (typeof config.processingRatePerPod === 'number' && !isNaN(config.processingRatePerPod)) ? config.processingRatePerPod : 1;
-  const prodRate = (typeof config.producingRateTotal === 'number' && !isNaN(config.producingRateTotal)) ? config.producingRateTotal : 0;
-  const tolerance = (typeof config.toleranceFraction === 'number' && !isNaN(config.toleranceFraction)) ? config.toleranceFraction : 0.1;
+  const minPods = Number(config.minPods) >= 0 ? Number(config.minPods) : 1;
+  const maxPods = Number(config.maxPods) >= minPods ? Number(config.maxPods) : Math.max(minPods, 20);
+  const startingPods = Number(config.startingPods) >= 0 ? Number(config.startingPods) : 1;
+  const targetMetric = Number(config.targetMetricValue) > 0 ? Number(config.targetMetricValue) : 1;
+  const procRate = Number(config.processingRatePerPod) >= 0 ? Number(config.processingRatePerPod) : 1;
+  const prodRate = Number(config.producingRateTotal) >= 0 ? Number(config.producingRateTotal) : 0;
+  const tolerance = Number(config.toleranceFraction) >= 0 ? Number(config.toleranceFraction) : 0.1;
+  const podDelay = Number(config.podStartupDelay) >= 0 ? Number(config.podStartupDelay) : 0;
 
   // Initialize state
-  let currentPods = startingPods;
+  let currentPods = startingPods; // Total Replicas
   
+  // Logic for ready pods:
+  // We assume startingPods are fully ready at t=0
+  let readyPods = currentPods;
+  
+  // Track pods that are starting up. 
+  // Each entry represents "seconds remaining until ready" for a batch of pods.
+  // Using a list of individual integers is simple enough for 1800s.
+  // Actually, let's store individual pods' remaining delay. 0 means ready (but those are moved to readyPods).
+  let pendingPods: number[] = []; 
+
   // If queue is 0 but metric value is set (and metric is latency), infer queue size
-  let currentQueue = (typeof config.initialQueueJobs === 'number' && !isNaN(config.initialQueueJobs)) ? config.initialQueueJobs : 0;
+  let currentQueue = Number(config.initialQueueJobs) >= 0 ? Number(config.initialQueueJobs) : 0;
   
   // Infer initial queue based on metric type if specific queue not set
-  if (currentQueue === 0 && config.initialMetricValue > 0) {
+  if (currentQueue === 0 && Number(config.initialMetricValue) > 0) {
       if (config.metricType === 'QueueLatency' && currentPods > 0) {
-        currentQueue = Math.ceil(config.initialMetricValue * currentPods * procRate);
+        currentQueue = Math.ceil(Number(config.initialMetricValue) * currentPods * procRate);
       } else if (config.metricType === 'QueueLength') {
-        currentQueue = Math.ceil(config.initialMetricValue);
+        currentQueue = Math.ceil(Number(config.initialMetricValue));
       }
   }
 
@@ -73,17 +82,31 @@ export const runSimulation = (config: SimulatorConfig): SimulationResult => {
   let scaleDowns = 0;
 
   for (let t = 0; t <= simSeconds; t++) {
+    // 0. Update Pod Readiness
+    // Decrement delay for pending pods
+    pendingPods = pendingPods.map(d => d - 1);
+    // Move newly ready pods
+    const newlyReadyCount = pendingPods.filter(d => d <= 0).length;
+    readyPods += newlyReadyCount;
+    // Keep only still pending
+    pendingPods = pendingPods.filter(d => d > 0);
+    
+    // Safety clamp (shouldn't be needed if logic is correct, but safe against drift)
+    readyPods = Math.min(readyPods, currentPods); 
+
     // 1. Calculate Physical Stats (Start of Tick)
-    const processingCapacity = currentPods * procRate;
+    // Capacity depends on READY pods
+    const processingCapacity = readyPods * procRate;
     let currentLatency = 0;
     
-    if (currentPods > 0 && procRate > 0) {
+    if (readyPods > 0 && procRate > 0) {
         currentLatency = currentQueue / processingCapacity;
     } else if (currentQueue > 0) {
-        currentLatency = 9999; // Infinite latency
+        currentLatency = 9999; // Infinite latency (stuck queue)
     }
 
     // 2. Calculate HPA Metric Value
+    // Note: HPA sees the metric based on CURRENT state (which is affected by ready pods)
     let currentMetricValue = 0;
     if (config.metricType === 'QueueLatency') {
         currentMetricValue = currentLatency;
@@ -97,8 +120,12 @@ export const runSimulation = (config: SimulatorConfig): SimulationResult => {
     const nextQueue = Math.max(0, currentQueue + arrivals - processed);
 
     // 4. HPA Core Formula
+    // HPA calculates desired replicas based on ratio.
+    // Usually uses currentPods (Total) as the base.
     let desiredReplicasRaw = currentPods;
-    const ratio = currentMetricValue / targetMetric;
+    // Protect against division by zero if target is somehow 0
+    const safeTarget = targetMetric > 0 ? targetMetric : 1;
+    const ratio = currentMetricValue / safeTarget;
     
     // Apply tolerance
     if (Math.abs(ratio - 1.0) > tolerance) {
@@ -191,12 +218,38 @@ export const runSimulation = (config: SimulatorConfig): SimulationResult => {
     // 7. Final Clamping & Update
     desiredReplicasEffective = Math.min(Math.max(desiredReplicasEffective, minPods), maxPods);
     
-    if (desiredReplicasEffective > currentPods) scaleUps++;
-    if (desiredReplicasEffective < currentPods) scaleDowns++;
+    // Apply changes to Pod counts
+    const delta = desiredReplicasEffective - currentPods;
+
+    if (delta > 0) {
+      scaleUps++;
+      currentPods += delta;
+      // Add new pods to pending queue
+      for (let i = 0; i < delta; i++) {
+        pendingPods.push(podDelay);
+      }
+    } else if (delta < 0) {
+      scaleDowns++;
+      currentPods += delta; // delta is negative
+      let removeCount = Math.abs(delta);
+      
+      // Logic: terminate pending pods first, then ready pods.
+      // 1. Remove from pending (pop from end)
+      while (removeCount > 0 && pendingPods.length > 0) {
+        pendingPods.pop();
+        removeCount--;
+      }
+      
+      // 2. Remove from ready
+      if (removeCount > 0) {
+        readyPods = Math.max(0, readyPods - removeCount);
+      }
+    }
 
     points.push({
       t,
       pods: currentPods,
+      readyPods: readyPods,
       queueJobs: currentQueue,
       latency: currentLatency,
       metricValue: currentMetricValue,
@@ -206,8 +259,7 @@ export const runSimulation = (config: SimulatorConfig): SimulationResult => {
       scaleDirection: direction
     });
 
-    podHistory.push(desiredReplicasEffective);
-    currentPods = desiredReplicasEffective;
+    podHistory.push(currentPods); // History tracks Scale (Total Pods)
     currentQueue = nextQueue;
   }
 

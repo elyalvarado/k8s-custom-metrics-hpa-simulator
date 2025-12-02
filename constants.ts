@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG: SimulatorConfig = {
   initialMetricValue: 0,
   processingRatePerPod: 100,
   producingRateTotal: 1115,
+  podStartupDelay: 0,
   
   simulationSeconds: 1800,
   targetMetricValue: 60,

@@ -33,6 +33,9 @@ const App: React.FC = () => {
 
   // Helper to update shallow top-level config fields
   const updateConfig = (field: keyof SimulatorConfig, value: any) => {
+    // If value is NaN (user cleared input), passing it to state is fine as engine handles sanitization,
+    // but cleaner to pass undefined or keep as string in a real form library.
+    // For this simple app, we pass it through.
     setConfig(prev => ({ ...prev, [field]: value }));
   };
 
@@ -111,6 +114,7 @@ const App: React.FC = () => {
                         <NumberInput label="Min Pods" value={config.minPods} onChange={e => updateConfig('minPods', parseInt(e.target.value))} />
                         <NumberInput label="Max Pods" value={config.maxPods} onChange={e => updateConfig('maxPods', parseInt(e.target.value))} />
                         <NumberInput label="Start Pods" value={config.startingPods} onChange={e => updateConfig('startingPods', parseInt(e.target.value))} />
+                        <NumberInput label="Pod Startup Delay (s)" value={config.podStartupDelay} onChange={e => updateConfig('podStartupDelay', parseInt(e.target.value))} />
                       </div>
                     </div>
 
@@ -205,6 +209,7 @@ const App: React.FC = () => {
                 This tool simulates Kubernetes HPA v2 behavior on a discrete 1-second interval. It calculates the metric (<b>{config.metricType === 'QueueLatency' ? 'Queue Latency' : 'Queue Length'}</b>) based on queue depth and processing capacity. 
                 Desired replicas are computed via <code>ceil(currentReplicas * (currentMetric / targetMetric))</code>. 
                 Stabilization windows use the conservative approach (Min for ScaleUp, Max for ScaleDown) over the window duration.
+                Scale Up events incur a pod startup delay if configured.
               </p>
             </div>
           </div>

@@ -17,8 +17,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
            <span className="text-slate-500">Metric Value:</span>
            <span className="font-mono">{data.metricValue.toFixed(2)}</span>
 
-           <span className="text-slate-500">Pods:</span>
-           <span className="font-mono">{data.pods}</span>
+           <span className="text-slate-500">Total Pods:</span>
+           <span className="font-mono font-bold">{data.pods}</span>
+
+           <span className="text-emerald-600 font-medium">Ready Pods:</span>
+           <span className="font-mono text-emerald-600 font-bold">{data.readyPods}</span>
 
            <span className="text-slate-500">Queue:</span>
            <span className="font-mono">{Math.round(data.queueJobs)}</span>
@@ -103,8 +106,17 @@ export const Charts: React.FC<Props> = ({ data, targetMetricValue, metricType })
             <Line 
               type="stepAfter" 
               dataKey="pods" 
-              name="Active Pods"
+              name="Total Pods"
               stroke="#0f172a" 
+              strokeWidth={2} 
+              dot={false}
+              isAnimationActive={false}
+            />
+             <Line 
+              type="stepAfter" 
+              dataKey="readyPods" 
+              name="Ready Pods"
+              stroke="#10b981" 
               strokeWidth={2} 
               dot={false}
               isAnimationActive={false}
@@ -139,6 +151,7 @@ export const Charts: React.FC<Props> = ({ data, targetMetricValue, metricType })
             <YAxis 
               tick={{fontSize: 12, fill: '#64748b'}}
               label={{ value: 'Jobs in Queue', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#64748b' }}
+              domain={['auto', 'auto']}
             />
             <Tooltip content={<CustomTooltip />} />
             
