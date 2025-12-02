@@ -2,7 +2,7 @@ import React from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import { SimulationPoint } from '../types';
+import { SimulationPoint, MetricType } from '../types';
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -14,6 +14,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
            <span className="text-slate-500">Latency:</span>
            <span className="font-mono">{data.latency.toFixed(2)}s</span>
            
+           <span className="text-slate-500">Metric Value:</span>
+           <span className="font-mono">{data.metricValue.toFixed(2)}</span>
+
            <span className="text-slate-500">Pods:</span>
            <span className="font-mono">{data.pods}</span>
 
@@ -34,13 +37,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 interface Props {
   data: SimulationPoint[];
-  targetLatency: number;
+  targetMetricValue: number;
+  metricType: MetricType;
 }
 
-export const Charts: React.FC<Props> = ({ data, targetLatency }) => {
+export const Charts: React.FC<Props> = ({ data, targetMetricValue, metricType }) => {
   return (
     <div className="space-y-6">
-      {/* Chart 1: Latency */}
+      {/* Chart 1: Queue Latency (Physical) */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-80">
         <h3 className="text-sm font-semibold text-slate-700 mb-4">Queue Latency vs Time</h3>
         <ResponsiveContainer width="100%" height="90%">
@@ -58,10 +62,15 @@ export const Charts: React.FC<Props> = ({ data, targetLatency }) => {
               label={{ value: 'Latency (s)', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#64748b' }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <ReferenceLine y={targetLatency} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Target', fill: '#ef4444', fontSize: 10, position: 'insideTopRight' }} />
+            
+            {metricType === 'QueueLatency' && (
+               <ReferenceLine y={targetMetricValue} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Target', fill: '#ef4444', fontSize: 10, position: 'insideTopRight' }} />
+            )}
+            
             <Line 
               type="monotone" 
               dataKey="latency" 
+              name="Latency"
               stroke="#6366f1" 
               strokeWidth={2} 
               dot={false}
